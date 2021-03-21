@@ -1,0 +1,26 @@
+diff -ru a/src/etc/inc/services.inc b/src/etc/inc/services.inc
+--- a/src/etc/inc/services.inc  2021-03-21 10:52:59.349053000 +0100
++++ b/src/etc/inc/services.inc  2021-03-21 11:00:11.552080000 +0100
+@@ -1785,7 +1785,7 @@
+        $srvifaces = array();
+        foreach ($srvips as $srcidx => $srvip) {
+                $destif = guess_interface_from_ip($srvip);
+-               if (!empty($destif) && !is_pseudo_interface($destif)) {
++               if (!empty($destif) /*&& !is_pseudo_interface($destif)*/) {
+                        $srvifaces[] = $destif;
+                }
+        }
+diff -ru a/src/usr/local/www/services_dhcp_relay.php b/src/usr/local/www/services_dhcp_relay.php
+--- a/src/usr/local/www/services_dhcp_relay.php 2021-03-21 10:56:54.239078000 +0100
++++ b/src/usr/local/www/services_dhcp_relay.php 2021-03-21 11:00:39.187461000 +0100
+@@ -46,8 +46,8 @@
+                array_filter(
+                        array_keys(get_configured_interface_with_descr()),
+                        function($if) {
+-                               return (get_interface_ip($if) &&
+-                                   !is_pseudo_interface(convert_friendly_interface_to_real_interface_name($if)));
++                               return (get_interface_ip($if) /*&&
++                                   !is_pseudo_interface(convert_friendly_interface_to_real_interface_name($if))*/);
+                        }
+                )
+        )
