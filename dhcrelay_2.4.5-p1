@@ -1,12 +1,41 @@
 diff -ru a/src/etc/inc/services.inc b/src/etc/inc/services.inc
---- a/src/etc/inc/services.inc  2021-03-21 10:52:59.349053000 +0100
-+++ b/src/etc/inc/services.inc  2021-03-21 11:00:11.552080000 +0100
-@@ -1785,7 +1785,7 @@
-        $srvifaces = array();
+--- a/src/etc/inc/services.inc  2020-05-13 15:50:35.000000000 +0200
++++ b/src/etc/inc/services.inc  2021-08-24 11:04:00.169399000 +0200
+@@ -1762,13 +1762,24 @@
+
+        $dhcrelayifs = array();
+        $dhcifaces = explode(",", $dhcrelaycfg['interface']);
++       if (!function_exists('str_starts_with')) {
++           function str_starts_with($haystack, $needle) {
++               return (string)$needle !== '' && strncmp($haystack, $needle, strlen($needle)) === 0;
++           }
++       }
++       $srvifaces = array();
+        foreach ($dhcifaces as $dhcrelayif) {
+                if (!isset($iflist[$dhcrelayif])) {
+                        continue;
+                }
+
+                if (get_interface_ip($dhcrelayif)) {
+-                       $dhcrelayifs[] = get_real_interface($dhcrelayif);
++                       $iface = get_real_interface($dhcrelayif);
++                       if ( !str_starts_with($iface, "ipsec") ) {
++                               $dhcrelayifs[] = $iface;
++                       } else {
++                               $srvifaces[] = $iface;
++                       }
+                }
+        }
+        $dhcrelayifs = array_unique($dhcrelayifs);
+@@ -1782,10 +1793,9 @@
+                log_error(gettext("No destination IP has been configured!"));
+                return;
+        }
+-       $srvifaces = array();
         foreach ($srvips as $srcidx => $srvip) {
                 $destif = guess_interface_from_ip($srvip);
 -               if (!empty($destif) && !is_pseudo_interface($destif)) {
-+               if (!empty($destif) /*&& !is_pseudo_interface($destif)*/) {
++                if (!empty($destif) /*&& !is_pseudo_interface($destif)*/) {
                         $srvifaces[] = $destif;
                 }
         }
