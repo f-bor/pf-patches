@@ -1,0 +1,53 @@
+diff -ruN src/etc/inc/services.inc dst/etc/inc/services.inc
+--- src/etc/inc/services.inc    2023-07-04 16:18:54.421098000 +0200
++++ dst/etc/inc/services.inc    2023-07-04 16:25:06.949457000 +0200
+@@ -2173,6 +2173,10 @@
+
+        $dhcrelayifs = array();
+        $dhcifaces = explode(",", $dhcrelaycfg['interface']);
++       if (!function_exists('str_starts_with')) {
++               function str_starts_with($haystack, $needle) {return (string)$needle !== '' && strncmp($haystack, $needle, strlen($needle)) === 0;}
++       }
++       $srvifaces = array();
+        foreach ($dhcifaces as $dhcrelayif) {
+                if (!isset($iflist[$dhcrelayif])) {
+                        continue;
+@@ -2180,6 +2184,12 @@
+
+                if (get_interface_ip($dhcrelayif)) {
+                        $dhcrelayifs[] = get_real_interface($dhcrelayif);
++                       $iface = get_real_interface($dhcrelayif);
++                       if ( !str_starts_with($iface, "ipsec") ) {
++                               $dhcrelayifs[] = $iface;
++                       } else {
++                               $srvifaces[] = $iface;
++                       }
+                }
+        }
+        $dhcrelayifs = array_unique($dhcrelayifs);
+@@ -2193,10 +2203,9 @@
+                log_error(gettext("No destination IP has been configured!"));
+                return;
+        }
+-       $srvifaces = array();
+        foreach ($srvips as $srcidx => $srvip) {
+                $destif = guess_interface_from_ip($srvip);
+-               if (!empty($destif) && !is_pseudo_interface($destif)) {
++               if (!empty($destif) /*&& !is_pseudo_interface($destif)*/) {
+                        $srvifaces[] = $destif;
+                }
+        }
+diff -ruN src/usr/local/www/services_dhcp_relay.php dst/usr/local/www/services_dhcp_relay.php
+--- src/usr/local/www/services_dhcp_relay.php   2023-07-04 16:19:09.398058000 +0200
++++ dst/usr/local/www/services_dhcp_relay.php   2023-07-04 16:28:20.676768000 +0200
+@@ -49,8 +49,8 @@
+                array_filter(
+                        array_keys(get_configured_interface_with_descr()),
+                        function($if) {
+-                               return (get_interface_ip($if) &&
+-                                   !is_pseudo_interface(convert_friendly_interface_to_real_interface_name($if)));
++                               return (get_interface_ip($if) /*&&
++                                   !is_pseudo_interface(convert_friendly_interface_to_real_interface_name($if))*/);
+                        }
+                )
+        )
