@@ -1,0 +1,204 @@
+diff -ruN src/etc/inc/gwlb.inc dst/etc/inc/gwlb.inc
+--- src/etc/inc/gwlb.inc	2023-07-04 14:39:30.016800000 +0200
++++ dst/etc/inc/gwlb.inc	2023-07-04 16:12:37.841647000 +0200
+@@ -109,13 +109,17 @@
+ 
+ 	$dpinger_defaults = return_dpinger_defaults();
+ 
++	$monitors = explode(' ', $gateway['monitor']);
++	// $suffix = str_replace(' ', '_', $gateway['monitor']);
++	$suffix = $monitors[0];
++
+ 	$prefix = "{$g['varrun_path']}/dpinger_{$gateway['name']}~" .
+-	    "{$gateway['gwifip']}~{$gateway['monitor']}";
++		"{$gateway['gwifip']}~{$suffix}";
+ 	# dpinger socket path should not be longer then uaddr.sun_path
+ 	if (strlen($prefix) > 95) {
+ 		$prefix = "{$g['varrun_path']}/dpinger_{$gateway['name']}~" .
+ 		    substr(md5($gateway['gwifip']),0,8) . "~" .
+-		    $gateway['monitor'];
++		    $suffix;
+ 	}
+ 	$pidfile = $prefix . ".pid";
+ 	$socket = $prefix . ".sock";
+@@ -211,7 +215,7 @@
+ 		if (isset($gateway['monitor_disable'])) {
+ 			continue;
+ 		}
+-		if (empty($gateway['monitor']) || !is_ipaddr($gateway['monitor'])) {
++		if (empty($gateway['monitor']) || !is_array_ipaddr($gateway['monitor'])) {
+ 			if (is_ipaddr($gateway['gateway'])) {
+ 				$gateways_arr[$gwname]['monitor'] = $gateway['gateway'];
+ 			} else { /* No chance to get an ip to monitor skip target. */
+@@ -219,10 +223,18 @@
+ 			}
+ 		}
+ 
++		$monitors = explode(' ', $gateway['monitor']);
++		$monitors_left = array();
+ 		/* if the monitor address is already used before, skip */
+-		if (in_array($gateway['monitor'], $monitor_ips)) {
+-			continue;
++		foreach ($monitors as $monitor ) {
++			if (in_array($gateway['monitor'], $monitor_ips)) {
++				continue;
++			}
++			$monitors_left[] = $monitor;
+ 		}
++		if ( count($monitors_left) == 0 )
++			continue ;
++		$gateway['monitor'] = implode(' ', $monitors_left);
+ 
+ 		/* Interface ip is needed since dpinger will bind a socket to it.
+ 		 * However the config GUI should already have checked this and when
+@@ -250,17 +262,19 @@
+ 			if (!isset($config['system']['dpinger_dont_add_static_routes']) &&
+ 					!isset($gateway['dpinger_dont_add_static_route'])) {
+ 				if (is_ipaddrv4($gateway['gateway']) && $gateway['monitor'] != $gateway['gateway']) {
+-					log_error(sprintf(gettext('Removing static route for monitor %1$s and adding a new route through %2$s'), $gateway['monitor'], $gateway['gateway']));
+-					if (interface_isppp_type($gateway['friendlyiface'])) {
+-						route_add_or_change($gateway['monitor'],
+-						    '', $gateway['interface']);
+-						system_staticroutes_configure($gateway['friendlyiface']);
+-					} else {
+-						route_add_or_change($gateway['monitor'],
+-						    $gateway['gateway']);
+-					}
++					log_error(sprintf(gettext('removing static route for monitor %1$s and adding a new route through %2$s'), $gateway['monitor'], $gateway['gateway']));
++					foreach ( $monitors_left as $monitor ) {
++						if (interface_isppp_type($gateway['friendlyiface'])) {
++							route_add_or_change($monitor,
++							    '', $gateway['interface']);
++							system_staticroutes_configure($gateway['friendlyiface']);
++						} else {
++							route_add_or_change($monitor,
++							    $gateway['gateway']);
++						}
+ 
+-					pfSense_kill_states("0.0.0.0/0", $gateway['monitor'], $gateway['interface'], "icmp");
++						pfSense_kill_states("0.0.0.0/0", $monitor, $gateway['interface'], "icmp");
++					}
+ 				}
+ 			}
+ 		} else if ($gateway['ipprotocol'] == "inet6") { // This is an IPv6 gateway...
+@@ -314,7 +328,7 @@
+ 			continue;
+ 		}
+ 
+-		$monitor_ips[] = $gateway['monitor'];
++		$monitor_ips = $monitor_ips + $monitors_left;
+ 		$gateways_arr[$gwname]['enable_dpinger'] = true;
+ 		$gateways_arr[$gwname]['gwifip'] = $gwifip;
+ 	}
+@@ -513,7 +527,7 @@
+ 		if (!isset($gwitem['monitor_disable'])) {
+ 			continue;
+ 		}
+-		if (!is_ipaddr($gwitem['monitor'])) {
++		if (!is_array_ipaddr($gwitem['monitor'])) {
+ 			$realif = $gwitem['interface'];
+ 			$tgtip = get_interface_gateway($realif);
+ 			if (!is_ipaddr($tgtip)) {
+@@ -1522,7 +1536,7 @@
+ 	$gateways_arr = return_gateways_array(false, true);
+ 	if (!empty($gateways_arr[$name])) {
+ 		$gateway = $gateways_arr[$name];
+-		if (!is_ipaddr($gateway['monitor'])) {
++		if (!is_array_ipaddr($gateway['monitor'])) {
+ 			return $gateway['gateway'];
+ 		}
+ 
+@@ -1891,7 +1905,10 @@
+ 		}
+ 	}
+ 	if (($gateway_settings['monitor'] != "") && ($gateway_settings['monitor'] != "dynamic")) {
+-		validateipaddr($gateway_settings['monitor'], IPV4V6, "Monitor IP", $input_errors, false);
++		$monitors = explode(' ', $gateway_settings['monitor']);
++		foreach ($monitors as $monitor) {
++			validateipaddr($monitor, IPV4V6, "Monitor IP", $input_errors, false);
++		}
+ 	}
+ 	if (isset($gateway_settings['data_payload']) && is_numeric($gateway_settings['data_payload']) && $gateway_settings['data_payload'] < 0) {
+ 		$input_errors[] = gettext("A valid data payload must be specified.");
+@@ -1909,13 +1926,16 @@
+ 		}
+ 	}
+ 	/* only allow correct IPv4 and IPv6 monitor addresses */
+-	if (($gateway_settings['monitor'] <> "") && is_ipaddr($gateway_settings['monitor']) && $gateway_settings['monitor'] != "dynamic") {
+-		if (is_ipaddrv6($gateway_settings['monitor']) && ($gateway_settings['ipprotocol'] == "inet")) {
+-			$input_errors[] = sprintf(gettext("The IPv6 monitor address '%s' can not be used on a IPv4 gateway."), $gateway_settings['monitor']);
++	if (($gateway_settings['monitor'] <> "") && is_array_ipaddr($gateway_settings['monitor']) && $gateway_settings['monitor'] != "dynamic") {
++		$monitors = explode(' ', $gateway_settings['monitor']);
++		foreach ($monitors as $monitor) {
++			if (is_ipaddrv6($monitor) && ($gateway_settings['ipprotocol'] == "inet")) {
++				$input_errors[] = sprintf(gettext("The IPv6 monitor address '%s' can not be used on a IPv4 gateway."), $monitor);
++			}
++			if (is_ipaddrv4($monitor) && ($gateway_settings['ipprotocol'] == "inet6")) {
++				$input_errors[] = sprintf(gettext("The IPv4 monitor address '%s' can not be used on a IPv6 gateway."), $monitor);
++			}
+ 		}
+-		if (is_ipaddrv4($gateway_settings['monitor']) && ($gateway_settings['ipprotocol'] == "inet6")) {
+-			$input_errors[] = sprintf(gettext("The IPv4 monitor address '%s' can not be used on a IPv6 gateway."), $gateway_settings['monitor']);
+-		}
+ 	}
+ 
+ 	if (isset($gateway_settings['name'])) {
+@@ -1939,10 +1959,14 @@
+ 					break;
+ 				}
+ 			}
+-			if (is_ipaddr($gateway_settings['monitor'])) {
+-				if (($gateway['monitor'] <> "") && ($gateway_settings['monitor'] == $gateway['monitor']) && ($gateway['attribute'] !== "system")) {
+-					$input_errors[] = sprintf(gettext('The monitor IP address "%s" is already in use. A different monitor IP must be chosen.'), $gateway_settings['monitor']);
+-					break;
++			if (is_array_ipaddr($gateway_settings['monitor']) && is_array_ipaddr($gateway['monitor']) ) {
++				$monitors = explode(' ', $gateway_settings['monitor']);
++				$other_monitors = explode(' ', $gateway['monitor']);
++				foreach ($monitors as $monitor) {
++					if (($gateway['monitor'] <> "") && (in_array($monitor, $other_monitors)) && ($gateway['attribute'] !== "system")) {
++						$input_errors[] = sprintf(gettext('The monitor IP address "%s" is already in use. A different monitor IP must be chosen.'), $gateway_settings['monitor']);
++						break;
++					}
+ 				}
+ 			}
+ 		}
+@@ -2133,7 +2157,7 @@
+ 		$gateway['force_down'] = true;
+ 	}
+ 	$gateway['gw_down_kill_states'] = $gateway_settings['gw_down_kill_states'];
+-	if (is_ipaddr($gateway_settings['monitor'])) {
++	if (is_array_ipaddr($gateway_settings['monitor'])) {
+ 		$gateway['monitor'] = $gateway_settings['monitor'];
+ 	}
+ 	if (isset($gateway_settings['data_payload']) && is_numeric($gateway_settings['data_payload']) && $gateway_settings['data_payload'] >= 0) {
+diff -ruN src/etc/inc/util.inc dst/etc/inc/util.inc
+--- src/etc/inc/util.inc	2023-07-04 15:41:40.353725000 +0200
++++ dst/etc/inc/util.inc	2023-07-04 16:12:54.741308000 +0200
+@@ -714,6 +714,15 @@
+ 	return false;
+ }
+ 
++function is_array_ipaddr($ipaddrs) {
++	if (gettype($ipaddrs) == 'string')
++		$ipaddrs = explode(' ', $ipaddrs);
++	foreach ($ipaddrs as $ipaddr)
++		if (!is_ipaddr($ipaddr))
++			return false;
++	return true;
++}
++
+ /* returns true if $ipaddr is a valid dotted IPv4 address or a IPv6
+ 	false - not valid
+ 	true (numeric 4 or 6) - if valid, gives type of address */
+diff -ruN src/usr/local/www/status_gateway_groups.php dst/usr/local/www/status_gateway_groups.php
+--- src/usr/local/www/status_gateway_groups.php	2023-07-04 15:40:23.308400000 +0200
++++ dst/usr/local/www/status_gateway_groups.php	2023-07-04 16:13:10.729981000 +0200
+@@ -126,6 +126,8 @@
+ 									$c = 1;
+ 									while ($c <= $priority_count) {
+ 										$monitor = lookup_gateway_monitor_ip_by_name($member);
++										$monitors = explode(' ', $monitor);
++										$monitor = $monitors[0];
+ 										$gwip = lookup_gateway_ip_by_name($member);
+ 										if ($p == $c) {
+ 											$status = $gateways_status[$monitor];
